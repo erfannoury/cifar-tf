@@ -6,6 +6,10 @@ import pickle
 import numpy as np
 import tensorflow as tf
 
+CHANNELS = 3
+HEIGHT = 32
+WIDTH = 32
+
 
 def maybe_download_and_extract():
     DATA_URL = 'http://www.cs.toronto.edu/~kriz/cifar-10-python.tar.gz'
@@ -46,9 +50,6 @@ def get_cifar_generator(data_dir, is_training):
     generator_fn: callable
         A generator function that will yield feature dict and label
     """
-    CHANNELS = 3
-    HEIGHT = 32
-    WIDTH = 32
     if is_training:
         data = []
         labels = []
@@ -59,8 +60,7 @@ def get_cifar_generator(data_dir, is_training):
             data.append(train_batch[b'data'])
             labels.append(train_batch[b'labels'])
         data = np.vstack(tuple(data)).astype(np.float32)
-        data = np.reshape(data, (-1, CHANNELS, HEIGHT, WIDTH))
-        labels = np.hstack(tuple(labels)).astype(np.int32)
+        labels = np.hstack(tuple(labels)).astype(np.int64)
         print('Train data.shape: {}, labels.shape: {}'.format(
             data.shape, labels.shape))
     else:
@@ -68,14 +68,16 @@ def get_cifar_generator(data_dir, is_training):
             open(os.path.join(data_dir, 'test_batch'), 'rb'),
             encoding='bytes')
         data = test_batch[b'data'].astype(np.float32)
-        data = np.reshape(data, (-1, CHANNELS, HEIGHT, WIDTH))
-        labels = np.asarray(test_batch[b'labels'], dtype=np.int32)
+        labels = np.asarray(test_batch[b'labels'], dtype=np.int64)
         print('Test data.shape: {}, labels.shape: {}'.format(
             data.shape, labels.shape))
 
+    data = np.reshape(data, (-1, CHANNELS, HEIGHT, WIDTH))
+    data = np.transpose(data, axes=(0, 2, 3, 1))
+
     def generator():
         for i in range(data.shape[0]):
-            yield (data[i], labels[i])
+            yield (data[i, :], labels[i])
 
     return generator
 
@@ -107,8 +109,9 @@ def get_input_fn(data_dir, is_training, num_epochs, batch_size, shuffle):
     gen = get_cifar_generator(data_dir, is_training)
     ds = tf.data.Dataset.from_generator(
         generator=gen,
-        output_types=(tf.float32, tf.int32),
-        output_shapes=(tf.TensorShape([None]), tf.TensorShape([]))
+        output_types=(tf.float32, tf.int64),
+        output_shapes=(tf.TensorShape([HEIGHT, WIDTH, CHANNELS]),
+                       tf.TensorShape([]))
     )
     if shuffle:
         ds = ds.shuffle(buffer_size=2000, reshuffle_each_iteration=True)
@@ -120,8 +123,36 @@ def get_input_fn(data_dir, is_training, num_epochs, batch_size, shuffle):
         images, labels = ds_iter.get_next()
         return images, labels
 
+    return input_fn
+
 
 if __name__ == '__main__':
     maybe_download_and_extract()
     get_cifar_generator('data/cifar-10-batches-py', True)
     get_cifar_generator('data/cifar-10-batches-py', False)
+
+    train_input_fn = get_input_fn(
+        data_dir='data/cifar-10-batches-py',
+        is_training=True,
+        num_epochs=1,
+        batch_size=13,
+        shuffle=True)
+
+    val_input_fn = get_input_fn(
+        data_dir='data/cifar-10-batches-py',
+        is_training=False,
+        num_epochs=1,
+        batch_size=15,
+        shuffle=False)
+
+    train_im, train_lbl = train_input_fn()
+    val_im, val_lbl = val_input_fn()
+    with tf.Session() as sess:
+        sess.run(tf.global_variables_initializer())
+        sess.run(tf.local_variables_initializer())
+        tf.train.start_queue_runners(sess)
+        im, lbl = sess.run((train_im, train_lbl))
+        print(im.shape, lbl.shape)
+
+        im, lbl = sess.run((val_im, val_lbl))
+        print(im.shape, lbl.shape)
