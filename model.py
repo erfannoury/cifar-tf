@@ -35,8 +35,8 @@ class CIFARSimpleCNNModel(object):
             Parameters
             ----------
             features: Tensor
-                A batch of images of shape `(batch size, num channels, image
-                height, image width)`.
+                A batch of images of shape `(batch size, image height, image
+                width, num channels)`.
             labels: Tensor
                 If mode is ModeKeys.INFER, `labels=None` will be passed.
             mode: tf.contrib.learn.ModeKeys
@@ -65,26 +65,12 @@ class CIFARSimpleCNNModel(object):
 
             train_op = self.get_train_func(
                 loss=loss,
-                hpparams=params,
+                learning_rate=params['learning_rate'],
                 mode=mode
             )
 
             eval_metric_ops = {
                 'evalmetric/accuracy': tf.contrib.metrics.streaming_accuracy(
-                    predictions=predictions, labels=labels),
-                'evalmetric/auroc': tf.contrib.metrics.streaming_auc(
-                    predictions=predictions, labels=labels),
-                'evalmetric/recall': tf.contrib.metrics.streaming_recall(
-                    predictions=predictions, labels=labels),
-                'evalmetric/precision': tf.contrib.metrics.streaming_precision(
-                    predictions=predictions, labels=labels),
-                'evalmetric/tp': tf.contrib.metrics.streaming_true_positives(
-                    predictions=predictions, labels=labels),
-                'evalmetric/fn': tf.contrib.metrics.streaming_false_negatives(
-                    predictions=predictions, labels=labels),
-                'evalmetric/fp': tf.contrib.metrics.streaming_false_positives(
-                    predictions=predictions, labels=labels),
-                'evalmetric/tn': tf.contrib.metrics.streaming_true_negatives(
                     predictions=predictions, labels=labels)
             }
 
@@ -104,8 +90,8 @@ class CIFARSimpleCNNModel(object):
         Parameters
         ----------
         images_var: Tensor
-            placeholder (or variable) for images of shape `(batch size,
-            num channels, image height, image width)`
+            placeholder (or variable) for images of shape `(batch size, image
+            height, image width, num channels)`
         labels_var: Tensor
             placeholder (or variable) for the class label of the image, of
             shape `(batch size, )`
@@ -113,6 +99,113 @@ class CIFARSimpleCNNModel(object):
             Run mode for creating the computational graph
         """
         with tf.variable_scope(self.scope, 'CIFARSimpleCNN'):
+            kernel_conv1 = tf.get_variable(
+                name='kernel_conv1',
+                shape=[5, 5, 3, 64],
+                dtype=tf.float32,
+                initializer=tf.random_normal_initializer(stddev=0.1),
+                trainable=True)
+            tf.summary.histogram('kernel_conv1', kernel_conv1)
+            bias_conv1 = tf.get_variable(
+                name='bias_conv1',
+                shape=[64],
+                dtype=tf.float32,
+                initializer=tf.constant_initializer(5.0),
+                trainable=True)
+            tf.summary.histogram('bias_conv1', bias_conv1)
+            conv1 = tf.nn.conv2d(
+                input=images_var,
+                filter=kernel_conv1,
+                strides=[1, 1, 1, 1],
+                padding='SAME',
+                use_cudnn_on_gpu=True,
+                data_format='NHWC',
+                name='conv1_layer')
+            conv1 = tf.nn.bias_add(
+                value=conv1,
+                bias=bias_conv1,
+                data_format='NHWC')
+            conv1 = tf.nn.relu(conv1)
+
+            mp_conv1 = tf.nn.max_pool(
+                value=conv1,
+                ksize=[1, 3, 3, 1],
+                strides=[1, 2, 2, 1],
+                padding='SAME',
+                data_format='NHWC',
+                name='mp_conv1_layer')
+
+            kernel_conv2 = tf.get_variable(
+                name='kernel_conv2',
+                shape=[5, 5, 64, 64],
+                dtype=tf.float32,
+                initializer=tf.random_normal_initializer(stddev=0.1),
+                trainable=True)
+            tf.summary.histogram('kernel_conv2', kernel_conv2)
+            bias_conv2 = tf.get_variable(
+                name='bias_conv2',
+                shape=[64],
+                dtype=tf.float32,
+                initializer=tf.constant_initializer(5.0),
+                trainable=True)
+            tf.summary.histogram('bias_conv2', bias_conv2)
+            conv2 = tf.nn.conv2d(
+                input=mp_conv1,
+                filter=kernel_conv2,
+                strides=[1, 1, 1, 1],
+                padding='SAME',
+                use_cudnn_on_gpu=True,
+                data_format='NHWC',
+                name='conv2_layer')
+            conv2 = tf.nn.bias_add(
+                value=conv2,
+                bias=bias_conv2,
+                data_format='NHWC')
+            conv2 = tf.nn.relu(conv2)
+
+            # mp_conv2 -> (batch size, 64, 8, 8)
+            mp_conv2 = tf.nn.max_pool(
+                value=conv2,
+                ksize=[1, 3, 3, 1],
+                strides=[1, 2, 2, 1],
+                padding='SAME',
+                data_format='NHWC',
+                name='mp_conv2_layer')
+
+            W_fc = tf.get_variable(
+                name='W_fc',
+                shape=[8 * 8 * 64, 512],
+                dtype=tf.float32,
+                initializer=tf.random_normal_initializer(stddev=0.1),
+                trainable=True)
+            tf.summary.histogram('W_fc', W_fc)
+            bias_fc = tf.get_variable(
+                name='bias_fc',
+                shape=[512],
+                dtype=tf.float32,
+                initializer=tf.constant_initializer(5.0),
+                trainable=True)
+            tf.summary.histogram('bias_fc', bias_fc)
+            mp_conv2_rshp = tf.reshape(
+                tensor=mp_conv2,
+                shape=[tf.shape(mp_conv2)[0], -1])
+            fc = tf.nn.xw_plus_b(
+                x=mp_conv2_rshp,
+                weights=W_fc,
+                biases=bias_fc,
+                name='fc_layer')
+            fc = tf.nn.relu(fc)
+
+            W_logit = tf.get_variable(
+                name='W_logit',
+                shape=[512, self.num_classes],
+                dtype=tf.float32,
+                initializer=tf.random_normal_initializer(stddev=0.1),
+                trainable=True)
+            tf.summary.histogram('W_logit', W_logit)
+
+            logits = tf.matmul(fc, W_logit)
+
             predictions = tf.argmax(logits, axis=-1)
 
             if mode != tf.contrib.learn.ModeKeys.INFER:
@@ -132,7 +225,7 @@ class CIFARSimpleCNNModel(object):
             else:
                 return logits, predictions
 
-    def get_train_func(self, loss, hpparams, mode):
+    def get_train_func(self, loss, learning_rate, mode):
         """
         Create the training function for the model.
 
@@ -140,8 +233,8 @@ class CIFARSimpleCNNModel(object):
         ----------
         loss: Tensor
             Tensor variable for the network loss
-        hpparams: dict
-            A dictionary of hyperparameters passed to the Estimator
+        learning_rate: float
+            Learning rate value
         mode: tf.contrib.learn.ModeKeys
                 Specifies if this training, evaluation, or prediction.
 
@@ -154,27 +247,11 @@ class CIFARSimpleCNNModel(object):
 
         global_step = tf.train.get_or_create_global_step()
 
-        if hpparams['use_decaying_lr']:
-            lr = tf.train.exponential_decay(
-                learning_rate=hpparams['learning_rate'],
-                global_step=global_step,
-                decay_steps=hpparams['lr_decay_steps'],
-                decay_rate=hpparams['lr_decay_rate'],
-                staircase=hpparams['lr_decay_staircase'],
-                name='exponential_decay_lr'
-            )
-            tf.summary.scalar('Exponential Decay LR', lr)
-        else:
-            lr = hpparams['learning_rate']
-
         train_op = tf.contrib.layers.optimize_loss(
             loss=loss,
             global_step=global_step,
-            learning_rate=lr,
+            learning_rate=learning_rate,
             optimizer='Adam',
-            clip_gradients=hpparams['gradient_clip'],
-            summaries=['gradients', 'gradient_norm'],
-            gradient_noise_scale=0.0
-        )
+            summaries=['gradients'])
 
         return train_op
