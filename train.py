@@ -5,7 +5,7 @@ import tensorflow as tf
 import data_utils
 import model
 
-tf.logging.set_verbosity(tf.logging.DEBUG)
+tf.logging.set_verbosity(tf.logging.INFO)
 MODELS = ['simplecnn']
 
 
@@ -13,6 +13,7 @@ def get_simple_cnn_experiment(args):
     """
     Function for creating an experiment using the SimpleCNN model on CIFAR
     """
+    print(args.num_epochs)
     train_input_fn = data_utils.get_input_fn(
         data_dir=args.data_dir,
         is_training=True,

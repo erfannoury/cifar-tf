@@ -103,7 +103,7 @@ class CIFARSimpleCNNModel(object):
                 name='kernel_conv1',
                 shape=[5, 5, 3, 64],
                 dtype=tf.float32,
-                initializer=tf.random_normal_initializer(stddev=0.1),
+                initializer=tf.truncated_normal_initializer(stddev=0.1),
                 trainable=True)
             tf.summary.histogram('kernel_conv1', kernel_conv1)
             bias_conv1 = tf.get_variable(
@@ -139,7 +139,7 @@ class CIFARSimpleCNNModel(object):
                 name='kernel_conv2',
                 shape=[5, 5, 64, 64],
                 dtype=tf.float32,
-                initializer=tf.random_normal_initializer(stddev=0.1),
+                initializer=tf.truncated_normal_initializer(stddev=0.1),
                 trainable=True)
             tf.summary.histogram('kernel_conv2', kernel_conv2)
             bias_conv2 = tf.get_variable(
@@ -176,7 +176,7 @@ class CIFARSimpleCNNModel(object):
                 name='W_fc',
                 shape=[8 * 8 * 64, 512],
                 dtype=tf.float32,
-                initializer=tf.random_normal_initializer(stddev=0.1),
+                initializer=tf.truncated_normal_initializer(stddev=0.1),
                 trainable=True)
             tf.summary.histogram('W_fc', W_fc)
             bias_fc = tf.get_variable(
@@ -200,7 +200,7 @@ class CIFARSimpleCNNModel(object):
                 name='W_logit',
                 shape=[512, self.num_classes],
                 dtype=tf.float32,
-                initializer=tf.random_normal_initializer(stddev=0.1),
+                initializer=tf.truncated_normal_initializer(stddev=0.1),
                 trainable=True)
             tf.summary.histogram('W_logit', W_logit)
 
