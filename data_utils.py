@@ -82,7 +82,8 @@ def get_cifar_generator(data_dir, is_training):
     return generator
 
 
-def get_input_fn(data_dir, is_training, num_epochs, batch_size, shuffle):
+def get_input_fn(data_dir, is_training, num_epochs, batch_size, shuffle,
+                 num_shards=1, shard_index=0):
     """
     This will return input_fn from which batches of data can be obtained.
 
@@ -98,12 +99,16 @@ def get_input_fn(data_dir, is_training, num_epochs, batch_size, shuffle):
         Batch size
     shuffle: bool
         Whether to shuffle the data or not
+    num_shards: int
+        Number of shards
+    shard_index: int
+        Index of the worker
 
     Returns
     -------
     input_fn: callable
         The input function which returns a batch of images and labels
-        tensors, of shape (batch size, CHANNELS, HEIGTH, WIDTH) and
+        tensors, of shape (batch size, HEIGTH, WIDTH, CHANNELS) and
         (batch size), respectively.
     """
     gen = get_cifar_generator(data_dir, is_training)
@@ -115,8 +120,11 @@ def get_input_fn(data_dir, is_training, num_epochs, batch_size, shuffle):
     )
     if shuffle:
         ds = ds.shuffle(buffer_size=2000, reshuffle_each_iteration=True)
+    if num_shards > 1:
+        ds = ds.shard(num_shards=num_shards, index=shard_index)
     ds = ds.repeat(count=num_epochs)
     ds = ds.batch(batch_size=batch_size)
+    ds = ds.prefetch(2 * batch_size)
 
     def input_fn():
         ds_iter = ds.make_one_shot_iterator()
@@ -128,6 +136,7 @@ def get_input_fn(data_dir, is_training, num_epochs, batch_size, shuffle):
 
 if __name__ == '__main__':
     maybe_download_and_extract()
+
     get_cifar_generator('data/cifar-10-batches-py', True)
     get_cifar_generator('data/cifar-10-batches-py', False)
 
