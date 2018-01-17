@@ -39,7 +39,7 @@ class CIFARSimpleCNNModel(object):
                 width, num channels)`.
             labels: Tensor
                 If mode is ModeKeys.INFER, `labels=None` will be passed.
-            mode: tf.contrib.learn.ModeKeys
+            mode: tf.estimator.ModeKeys
                 Specifies if this training, evaluation, or prediction.
             params: dict
                 Optional dictionary of hyperparameters. Will receive what
@@ -57,29 +57,42 @@ class CIFARSimpleCNNModel(object):
                 The training operation that when run in a session, will update
                 model parameters, given input features and labels
             """
-            predictions, loss = self.create_model_graph(
-                images_var=features,
-                labels_var=labels,
-                mode=mode
-            )
+            if mode == tf.estimator.ModeKeys.PREDICT:
+                logits, predictions = self.create_model_graph(
+                    images_var=features,
+                    labels_var=labels,
+                    mode=mode
+                )
 
-            train_op = self.get_train_func(
-                loss=loss,
-                learning_rate=params['learning_rate'],
-                mode=mode
-            )
+                return tf.estimator.EstimatorSpec(
+                    mode=mode,
+                    predictions={'label': predictions}
+                )
+            else:
+                predictions, loss = self.create_model_graph(
+                    images_var=features,
+                    labels_var=labels,
+                    mode=mode
+                )
 
-            eval_metric_ops = {
-                'evalmetric/accuracy': tf.contrib.metrics.streaming_accuracy(
-                    predictions=predictions, labels=labels)
-            }
+                train_op = self.get_train_func(
+                    loss=loss,
+                    learning_rate=params['learning_rate'],
+                    mode=mode
+                )
 
-            return tf.estimator.EstimatorSpec(
-                mode=mode,
-                predictions=predictions,
-                loss=loss,
-                train_op=train_op,
-                eval_metric_ops=eval_metric_ops)
+                eval_metric_ops = {
+                    'evalmetric/accuracy':
+                        tf.contrib.metrics.streaming_accuracy(
+                            predictions=predictions, labels=labels)
+                }
+
+                return tf.estimator.EstimatorSpec(
+                    mode=mode,
+                    predictions=predictions,
+                    loss=loss,
+                    train_op=train_op,
+                    eval_metric_ops=eval_metric_ops)
 
         return model_fn
 
@@ -95,7 +108,7 @@ class CIFARSimpleCNNModel(object):
         labels_var: Tensor
             placeholder (or variable) for the class label of the image, of
             shape `(batch size, )`
-        mode: tf.contrib.learn.ModeKeys
+        mode: tf.estimator.ModeKeys
             Run mode for creating the computational graph
         """
         with tf.variable_scope(self.scope, 'CIFARSimpleCNN'):
@@ -208,7 +221,7 @@ class CIFARSimpleCNNModel(object):
 
             predictions = tf.argmax(logits, axis=-1)
 
-            if mode != tf.contrib.learn.ModeKeys.INFER:
+            if mode != tf.estimator.ModeKeys.PREDICT:
                 with tf.variable_scope('loss'):
                     losses = tf.nn.sparse_softmax_cross_entropy_with_logits(
                         labels=labels_var,
