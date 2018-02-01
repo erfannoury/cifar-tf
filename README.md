@@ -24,14 +24,19 @@ To start distributed training, first run the parameter server.
 $ CUDA_VISIBLE_DEVICES='' python train.py -m simplecnn -md model/distsimplecnn -dd data/cifar-10-batches-py -nc 10 -e 100 --distributed --dist-type ps --ps-count 1 --worker-count 2 --dist-start-port 7000 --ps-index 0
 ```
 
-Afterwards, start the master node. This node will train and evaluate the model.
+Afterwards, start the master node. This node will train the model.
 ```bash
 $ CUDA_VISIBLE_DEVICES=0 python train.py -m simplecnn -md model/distsimplecnn -dd data/cifar-10-batches-py -nc 10 -e 100 --distributed --dist-type master --ps-count 1 --worker-count 2 --dist-start-port 7000
 ```
 
-Finally, start the two worker runs that will only train the model.
+Then start the two worker nodes that will only train the model.
 ```bash
 $ CUDA_VISIBLE_DEVICES=1 python train.py -m simplecnn -md model/distsimplecnn -dd data/cifar-10-batches-py -nc 10 -e 100 --distributed --dist-type worker --ps-count 1 --worker-count 2 --dist-start-port 7000 --worker-index 0
 
 $ CUDA_VISIBLE_DEVICES=2 python train.py -m simplecnn -md model/distsimplecnn -dd data/cifar-10-batches-py -nc 10 -e 100 --distributed --dist-type worker --ps-count 1 --worker-count 2 --dist-start-port 7000 --worker-index 1
+```
+
+Finally, start the evaluator. This node is not a distributed node, and its job is to continuously evaluate the latest model checkpoint on the validation data.
+```bash
+$ CUDA_VISIBLE_DEVICES=3 python train.py -m simplecnn -md model/distsimplecnn -dd data/cifar-10-batches-py -nc 10 -e 100 --distributed --dist-type evaluator --ps-count 1 --worker-count 2 --dist-start-port 7000
 ```
