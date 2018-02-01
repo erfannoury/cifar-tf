@@ -9,7 +9,7 @@ import model
 
 tf.logging.set_verbosity(tf.logging.INFO)
 MODELS = ['simplecnn']
-DIST_TYPES = ['master', 'ps', 'worker']
+DIST_TYPES = ['master', 'ps', 'worker', 'evaluator']
 
 
 def get_simple_cnn_experiment(args):
@@ -40,7 +40,7 @@ def get_simple_cnn_experiment(args):
         num_classes=args.num_classes,
         scope='CIFAR{}SimpleCNN'.format(args.num_classes))
 
-    if args.distributed:
+    if args.distributed and args.dist_type != 'evaluator':
         dist_config = {}
         dist_config['cluster'] = {
             'master': ['127.0.0.1:{}'.format(args.dist_start_port + 1)],
@@ -140,11 +140,14 @@ def main(args):
         raise NotImplementedError()
 
     if args.distributed:
-        if args.dist_type == 'master':
-            experiment.train_and_evaluate()
+        if args.dist_type == 'evaluator':
+            experiment.continuous_eval(
+                delay_secs=120,
+                throttle_delay_secs=600
+            )
         elif args.dist_type == 'ps':
             experiment.run_std_server()
-        else:
+        else:  # master or worker
             experiment.train()
     else:
         experiment.train_and_evaluate()
