@@ -255,7 +255,7 @@ class CIFARSimpleCNNModel(object):
         -------
         train_op
         """
-        if mode != tf.contrib.learn.ModeKeys.TRAIN or loss is None:
+        if mode != tf.estimator.ModeKeys.TRAIN or loss is None:
             return None
 
         global_step = tf.train.get_or_create_global_step()
