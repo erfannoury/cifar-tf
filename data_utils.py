@@ -1,167 +1,46 @@
 import sys
 import os
-from six.moves import urllib
-import tarfile
-import pickle
+
 import numpy as np
 import tensorflow as tf
 
-CHANNELS = 3
-HEIGHT = 32
-WIDTH = 32
 
+def get_cifar10_dataset(batch_size, num_epochs=1, num_shards=1, shard_index=0,
+                        shuffle=False):
+    cifar = tf.keras.datasets.cifar10
 
-def maybe_download_and_extract():
-    DATA_URL = 'http://www.cs.toronto.edu/~kriz/cifar-10-python.tar.gz'
-    """Download and extract the tarball from Alex's website."""
-    dest_directory = 'data'
-    if not os.path.exists(dest_directory):
-        os.makedirs(dest_directory)
-    filename = DATA_URL.split('/')[-1]
-    filepath = os.path.join(dest_directory, filename)
-    if not os.path.exists(filepath):
-        def _progress(count, block_size, total_size):
-            sys.stdout.write('\r>> Downloading %s %.1f%%' % (
-                filename,
-                float(count * block_size) / float(total_size) * 100.0))
-            sys.stdout.flush()
-        filepath, _ = urllib.request.urlretrieve(DATA_URL, filepath, _progress)
-        print()
-        statinfo = os.stat(filepath)
-        print('Successfully downloaded', filename, statinfo.st_size, 'bytes.')
-    extracted_dir_path = os.path.join(dest_directory, 'cifar-10-batches-bin')
-    if not os.path.exists(extracted_dir_path):
-        tarfile.open(filepath, 'r:gz').extractall(dest_directory)
+    (x_train, y_train), (x_test, y_test) = cifar.load_data()
+    x_train = (x_train * 1.0) / 255.
+    x_test = (x_test * 1.0) / 255.
+    y_train = np.squeeze(y_train)
+    y_test = np.squeeze(y_test)
 
-
-def get_cifar_generator(data_dir, is_training):
-    """
-    Gets a generator function that will be used for the input_fn
-
-    Parameters
-    ----------
-    data_dir: str
-        Path to where the cifar data resides
-    is_training: bool
-        Whether to read the training or the test portion of the data
-
-    Returns
-    -------
-    generator_fn: callable
-        A generator function that will yield feature dict and label
-    """
-    if is_training:
-        data = []
-        labels = []
-        for i in range(1, 6):
-            train_batch = pickle.load(
-                open(os.path.join(data_dir, 'data_batch_' + str(i)), 'rb'),
-                encoding='bytes')
-            data.append(train_batch[b'data'])
-            labels.append(train_batch[b'labels'])
-        data = np.vstack(tuple(data)).astype(np.float32)
-        labels = np.hstack(tuple(labels)).astype(np.int64)
-        print('Train data.shape: {}, labels.shape: {}'.format(
-            data.shape, labels.shape))
-    else:
-        test_batch = pickle.load(
-            open(os.path.join(data_dir, 'test_batch'), 'rb'),
-            encoding='bytes')
-        data = test_batch[b'data'].astype(np.float32)
-        labels = np.asarray(test_batch[b'labels'], dtype=np.int64)
-        print('Test data.shape: {}, labels.shape: {}'.format(
-            data.shape, labels.shape))
-
-    data = np.reshape(data, (-1, CHANNELS, HEIGHT, WIDTH))
-    data = np.transpose(data, axes=(0, 2, 3, 1))
-
-    def generator():
-        for i in range(data.shape[0]):
-            yield (data[i, :], labels[i])
-
-    return generator
-
-
-def get_input_fn(data_dir, is_training, num_epochs, batch_size, shuffle,
-                 num_shards=1, shard_index=0):
-    """
-    This will return input_fn from which batches of data can be obtained.
-
-    Parameters
-    ----------
-    data_dir: str
-        Path to where the cifar data resides
-    is_training: bool
-        Whether to read the training or the test portion of the data
-    num_epochs: int
-        Number of data epochs
-    batch_size: int
-        Batch size
-    shuffle: bool
-        Whether to shuffle the data or not
-    num_shards: int
-        Number of shards
-    shard_index: int
-        Index of the worker
-
-    Returns
-    -------
-    input_fn: callable
-        The input function which returns a batch of images and labels
-        tensors, of shape (batch size, HEIGTH, WIDTH, CHANNELS) and
-        (batch size), respectively.
-    """
-    gen = get_cifar_generator(data_dir, is_training)
-    ds = tf.data.Dataset.from_generator(
-        generator=gen,
-        output_types=(tf.float32, tf.int64),
-        output_shapes=(tf.TensorShape([HEIGHT, WIDTH, CHANNELS]),
-                       tf.TensorShape([]))
-    )
     if shuffle:
-        ds = ds.shuffle(buffer_size=2000, reshuffle_each_iteration=True)
-    if num_shards > 1:
-        ds = ds.shard(num_shards=num_shards, index=shard_index)
-    ds = ds.repeat(count=num_epochs)
-    ds = ds.batch(batch_size=batch_size)
-    ds = ds.prefetch(2 * batch_size)
+        X = x_train
+        Y = y_train
+        shuffle_indices = np.arange(X.shape[0])
+        np.random.shuffle(shuffle_indices)
+        X = X[shuffle_indices]
+        Y = Y[shuffle_indices]
+    else:
+        X = x_test
+        Y = y_test
 
-    def input_fn():
-        ds_iter = ds.make_one_shot_iterator()
-        images, labels = ds_iter.get_next()
-        return images, labels
+    def ds_fn():
+        def gen():
+            for x, y in zip(X, Y):
+                yield (x, y)
+        ds = tf.data.Dataset.from_generator(
+            gen, output_types=(tf.float32, tf.int32),
+            output_shapes=(tf.TensorShape([32, 32, 3]), tf.TensorShape([])))
+        ds = ds.shard(num_shards, shard_index)
+        if shuffle:
+            ds = ds.shuffle(buffer_size=128)
+            ds = ds.map(lambda i, l: (tf.image.random_flip_left_right(i), l),
+                        num_parallel_calls=16)
+        ds = ds.batch(batch_size=batch_size, drop_remainder=False)
+        ds = ds.repeat(num_epochs)
 
-    return input_fn
-
-
-if __name__ == '__main__':
-    maybe_download_and_extract()
-
-    get_cifar_generator('data/cifar-10-batches-py', True)
-    get_cifar_generator('data/cifar-10-batches-py', False)
-
-    train_input_fn = get_input_fn(
-        data_dir='data/cifar-10-batches-py',
-        is_training=True,
-        num_epochs=1,
-        batch_size=13,
-        shuffle=True)
-
-    val_input_fn = get_input_fn(
-        data_dir='data/cifar-10-batches-py',
-        is_training=False,
-        num_epochs=1,
-        batch_size=15,
-        shuffle=False)
-
-    train_im, train_lbl = train_input_fn()
-    val_im, val_lbl = val_input_fn()
-    with tf.Session() as sess:
-        sess.run(tf.global_variables_initializer())
-        sess.run(tf.local_variables_initializer())
-        tf.train.start_queue_runners(sess)
-        im, lbl = sess.run((train_im, train_lbl))
-        print(im.shape, lbl.shape)
-
-        im, lbl = sess.run((val_im, val_lbl))
-        print(im.shape, lbl.shape)
+        feat, label = ds.make_one_shot_iterator().get_next()
+        return feat, label
+    return ds_fn
