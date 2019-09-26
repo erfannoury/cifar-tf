@@ -54,6 +54,10 @@ def main(args):
                         help='Index of the worker for distributed training')
 
     args = parser.parse_args(args)
+    
+    os.makedirs(args.model_dir, exist_ok=True)
+    config_filename = os.path.join(args.model_dir, 'config.json')
+    json.dump(vars(args), open(config_filename, 'w', encoding='utf-8'))
 
     shard_index = 0
     if args.distributed and args.dist_type == 'worker':
